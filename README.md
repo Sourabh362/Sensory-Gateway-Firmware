@@ -2,197 +2,115 @@
 
 ## Design Decisions & Optimizations
 
-### Store every reading (store-on-change / interval considered)
+### 1. Store every reading (store-on-change considered)
 
-**Status:** Store every reading (as the brief requires). Store-on-change is a documented optimization that can be added later.
+- **Store every valid reading in flash.** The brief requires "store every reading", and clean/noisy are checked against the manifest counts.
+- **Heartbeats are counted, not stored.** They carry no data, only "link alive".
+- **Store-on-change / interval (deadband) rejected.** Every reading has a unique timestamp, so skipping "same value" readings loses data.
+- **Can be added later as a storage-policy filter** (queue → filter → flash writer). Only the filter changes; the parser and flash log stay the same.
+- **Delta encoding rejected.** Each record depends on the previous one, so one torn record breaks the chain.
+- **Run-length encoding rejected.** Variable-size records make power-loss recovery complex.
+- **Fixed standalone records chosen.** Each record can be verified on its own.
 
-**Idea considered:** do not write every reading to flash. Instead, store a reading only when:
-- the value changes from the last stored reading, or
-- a regular interval passes (for example at heartbeat times).
-
-This is *report-by-exception* (a deadband). Real gateways use it widely because it:
-- saves flash space, so more history fits in 64 KB,
-- reduces erase cycles, so flash lasts longer,
-- reduces flash busy time, which helps at high data rates (burst).
-
-**Why it is not used here:**
-- The brief says **"Store every reading"**. For `clean.bin` and `noisy.bin` the pass criterion is **"every intact reading stored"**, checked against the manifest counts.
-- Every reading carries its own sensor **timestamp**. Two readings with the same temperature are still two different data points, so skipping one loses information.
-
-**Decision:** every valid reading frame is stored in flash. Heartbeat frames are counted, not stored.
-
-**How it could be implemented later:** as a configurable *storage policy* filter between the reading queue and the flash writer:
+### 2. Flash record format: 8 bytes = payload + the frame's CRC
 
 ```
-parser ─► reading queue ─► [storage policy] ─► flash writer
-                            ├─ STORE_ALL      (current)
-                            ├─ STORE_ON_CHANGE (store if |Δtemp| > deadband)
-                            └─ STORE_INTERVAL  (store every N ms / on heartbeat)
+[temp 2B][timestamp 4B][CRC 2B]      e.g. frame AA 06 01 |29 09 E8 03 00 00| 7B 84
+                                                    stored → 29 09 E8 03 00 00  7B 84
 ```
 
-Only the filter changes. The parser, flash log and power-loss handling stay the same.
+- **Only the payload + the frame CRC are stored.** That is all the data plus the minimum needed to detect corruption.
+- **SOF/LEN/TYPE are not stored.** They are always `AA 06 01` for a reading, so they are re-added when validating.
+- **The frame's CRC is reused.** It was already computed and verified by the parser, so there is no extra work on the write path.
+- **Written in one 8-byte write.** It is just as safe as two writes (a missing CRC reads `FFFF` and fails) and twice as fast.
+- **"Stored" is reported only after the write completes.** A power cut before that point loses nothing that was promised.
+- **Validation is `crc16(06 01 + payload) == stored CRC`.** The stored CRC is the fingerprint taken while the data was good.
+- **The CRC must be stored, not just recomputed.** Recomputing from the data alone compares it with itself and always "matches".
+- **All-`FF` slot = blank.** `crc16(06 01 FF×6) = 0x9E4B ≠ 0xFFFF`, so a blank slot can never pass as valid.
+- **Torn or corrupted slot (CRC mismatch) is skipped and never reused.** NOR cannot be rewritten without an erase.
+- **No data-only 6 B record.** A torn record would look like a valid reading (e.g. `t = 4,294,967,272 ms`).
+- **No 16 B record (seq + commit byte).** It needs 2 writes per reading and halves capacity; order already comes from sector seq + slot position.
+- **No parity bit.** It misses ~50% of torn writes.
+- **No 0-bit count (Berger code).** It catches all torn writes but misses two-way bit flips from wear/decay.
+- **The CRC is not a speed issue.** It takes ~0.5 µs vs 100 µs per flash write, and reusing the frame CRC removes even that.
+- **Capacity: 511 records per sector, ≈ 8,176 readings in total.** 8-byte records never straddle a 256 B page.
+- **Known limit: a torn record passes by chance ~1 in 65,536.** It can only happen at a power cut, at most once per cut.
+- **Known limit: the format is tied to the sensor frame format.** Acceptable because the protocol is fixed by the brief.
 
-**Lossless alternatives also considered:**
+### 2a. Storage encoding: raw binary, optional encryption hook (open)
 
-| Method | Saves space | Why not used |
-|---|---|---|
-| Delta encoding (store changes from the previous reading) | Yes, ~4–6 B per record | A record depends on the previous one, so one torn record breaks the chain and power-loss recovery gets much harder |
-| Run-length ("same value, N more readings") | Yes, if values are steady | Variable-size records make boot recovery complex |
-| Fixed standalone records | Moderate | **Chosen.** Each record can be verified on its own, which is simplest for power-loss safety |
-
-### UART ring buffer concurrency: single producer, single consumer, atomic indices
-
-**Status:** Accepted
-
-**Target:** a **single-core** microcontroller. The UART RX interrupt *preempts* the main loop, runs to completion, and returns. Only one of them runs at any instant, but the ISR can fire at **any point** in the middle of main-loop code.
-
-**Model: one producer, one consumer (SPSC)**
-
-```
- UART RX ISR (producer)                      main loop (consumer)
- ──────────────────────                      ────────────────────
- writes: data[head], head                    writes: tail
- reads : tail  (is it full?)                 reads : head (anything new?), data[tail]
- counts: bytes_received, bytes_lost          reads : counters for `stats`
-```
-
-**The rules that make it safe:**
-1. **Every shared variable has exactly one writer.**
-   - `head` is written only by the ISR.
-   - `tail` is written only by the main loop.
-   - `bytes_received` and `bytes_lost` are written only by the ISR.
-
-   No variable is ever written by both sides, so there's no read-modify-write race and no lock is needed.
-2. **Index reads and writes are atomic.** Each one is a single indivisible 32-bit access, so the other side never sees a half-updated value.
-3. **Ordering: data first, then index.**
-   - The ISR stores the byte into `data[head]`, then publishes `head + 1` (*release*).
-   - The main loop reads `head` (*acquire*), then reads the data.
-
-   So if the main loop sees the new index, the byte is guaranteed to be there already. The same applies in reverse for `tail`: the slot is only reused after the main loop has finished reading it.
-4. **The ISR never waits.** If the buffer is full, it drops the byte, increments `bytes_lost`, and returns. No locks, so no deadlock and no priority inversion.
-
-**Where atomics are used, and where they are not:**
-
-| Variable | Atomic | Reason |
-|---|---|---|
-| Ring `head` | Yes | Written by the ISR, read by the main loop |
-| Ring `tail` | Yes | Written by the main loop, read by the ISR |
-| `bytes_received`, `bytes_lost` | Yes | Written by the ISR, read by the main loop |
-| Ring data bytes | No | Protected by the index ordering (rule 3) |
-| Reading queue (parser → flash) | No | Producer and consumer both run in the main loop, so nothing is concurrent |
-
-**Why C11 atomics instead of just `volatile`:**
-- On a single core, `volatile` plus a compiler barrier is enough in practice. The only risk there is the **compiler** reordering the data write after the index write.
-- C11 `atomic_load_explicit` / `atomic_store_explicit` with acquire/release states the intent explicitly, and it is **also correct on multi-core** (ESP32 dual-core, and the PC simulation, where the "ISR" is a real parallel thread). On multi-core, the *hardware* can also reorder memory, and acquire/release prevents that.
-- Cost on a single-core Cortex-M: plain loads and stores plus a barrier. Effectively free.
-- The counters avoid atomic read-modify-write (`fetch_add`). Since only the ISR writes them, it does a plain atomic load followed by an atomic store. That stays lock-free even on Cortex-M0, which has no atomic RMW instructions.
-
-**Rejected alternatives:**
-
-| Alternative | Why not |
-|---|---|
-| Disable interrupts around main-loop buffer access (critical section) | Works on a single core, but adds interrupt latency and does not work across cores |
-| Mutex / lock | An ISR must never block on a lock |
-| RTOS queue (`xQueueSendFromISR`) | Fine on FreeRTOS, but the brief requires a self-written buffer, and it hides the reasoning |
-
-### Buffer sizing: large, safe buffers for UART overflow and flash delays
-
-**Status:** Accepted (exact sizes to be confirmed by testing)
-
-There are two buffers, and each protects against a different slow-down:
+- **Records are stored as raw binary, not hex or ASCII.** This is the most compact form: hex/ASCII text would double or triple the size (8 B → 16+ B).
+- **Little-endian, packed, fixed 8 B.** It matches the wire format, so it is copied with no conversion.
+- **Encryption is an open block: designed in, disabled by default.** It is not required by the brief, but the slot exists so it can be enabled later.
 
 ```
-UART ISR ─► [1] byte ring buffer ─► parser ─► [2] reading queue ─► flash writer
-             protects UART RX                  protects against flash delays
+reading ─► [encrypt? (off by default)] ─► 8 B record ─► flash
+flash ─► 8 B record ─► [decrypt? (off by default)] ─► CRC check ─► reading
 ```
 
-**Sizing rule:** a buffer must hold everything that arrives during the **longest time its reader can be blocked**, plus a safety margin.
+**Rules for when encryption is enabled (to be implemented later):**
+- **The record stays 8 B (size-preserving cipher, e.g. AES-CTR).** The flash layout, capacity and boot scan stay unchanged.
+- **Encrypt the payload + CRC together.** The CRC is not left in clear, so no information leaks.
+- **Blank check (all `FF`) happens before decrypting.** A blank slot is detected without the key.
+- **Validate as decrypt → CRC check.** Torn/corrupted records still fail exactly as before.
+- **Nonce = sector seq + slot index.** It is unique per write, because a slot is written once per erase and the sector seq always increases.
+- **The key lives outside flash** (secure element / eFuse on real hardware). A key stored next to the data protects nothing.
+- **Known limit: encryption gives confidentiality, not tamper-proofing.** Detecting deliberate modification needs a MAC, which grows the record (trade-off left open).
 
-`size ≥ incoming rate × worst-case block time × margin (≥2×)`
+### 3. UART ring buffer: single producer, single consumer, atomic indices
 
-#### [1] Byte ring buffer: prevents UART overflow
+- **Target: a single-core MCU.** The ISR preempts the main loop at any point, so shared data must be safe at every instruction.
+- **One producer (UART ISR), one consumer (main loop).** It is the simplest model that needs no locks.
+- **`head` is written only by the ISR, `tail` only by the main loop.** One writer per variable means no write-write race.
+- **`bytes_received` / `bytes_lost` are written only by the ISR.** Plain atomic load and store, no read-modify-write, so it is lock-free even on Cortex-M0.
+- **Atomic `head`/`tail` access.** The other side never sees a half-updated index.
+- **Data is written first, then the index (release/acquire).** If the reader sees the new index, the byte is guaranteed to be there.
+- **The data bytes themselves are not atomic.** They are protected by the index ordering.
+- **The ISR never waits.** When the buffer is full it drops and counts the byte, so there is no deadlock and no priority inversion.
+- **The UART register is already `volatile`.** The vendor header handles hardware → CPU reads.
+- **The ring buffer needs atomicity, not `volatile`.** `volatile` belongs to a memory location; it does not carry over to copied data.
+- **C11 atomics over hand-made `volatile` + barriers.** The ordering is explicit, also correct on multi-core (ESP32, the PC simulation), and free on Cortex-M.
+- **The reading queue has no atomics.** Its producer and consumer both run in the main loop.
+- **No disabling interrupts.** It adds latency and does not work across cores.
+- **No mutex.** An ISR must never block.
+- **No RTOS queue.** The brief requires a self-written buffer.
 
-- **Writer:** UART RX interrupt. **Reader:** main loop.
-- The main loop is blocked for at most one flash operation: a sector erase, **20 ms**.
-
-| Baud | Bytes/s (8N1 = 10 bits/byte) | Bytes arriving in 20 ms | Chosen size | Headroom |
-|---|---|---|---|---|
-| 115200 | 11,520 | ~230 B | **4 KB** | ~350 ms (≈17×) |
-| 921600 | 92,160 | ~1,840 B | **4 KB** | ~44 ms (≈2×) |
-
-- If it is ever full, the ISR **drops the byte and counts it** (`bytes lost`). It never waits or blocks.
-- The size is a power of two, so the index wrap is a cheap bit-mask.
-
-#### [2] Reading queue: absorbs flash delays
-
-- **Writer:** parser (good readings). **Reader:** flash writer.
-- Flash work blocks the writer: 20 ms per sector erase, or 16 × 20 ms = 320 ms for the `erase` console command.
-
-| Situation | Readings arriving (≈1,000/s at 115200) | Chosen size |
-|---|---|---|
-| One sector erase (20 ms) | ~20 | |
-| `erase` command (320 ms) | ~320 | **512 readings** (≈1.6× margin) |
-
-- If it is full, the reading is **dropped and counted** (`readings dropped`).
-- When a backlog builds, the flash writer batches several records into one write (up to 256 B) to catch up faster.
-
-#### Important limit: buffers absorb *temporary* stalls, not *sustained* overload
-
-- At 115200 the flash is busy ~28% of the time, so the buffers drain between stalls. No loss.
-- At 921600 (`burst.bin`) the flash needs ~2.2 s of work per 1 s of data. No buffer size can fix a rate mismatch; any buffer just fills more slowly. Loss there is expected, counted and explained. The real fix is making flash work cheaper (batching, smaller records), not a bigger buffer.
-
-#### Constraints on the buffers
-- **Statically allocated** at compile time. No heap after start-up (firmware rule).
-- RAM cost: ~4 KB (bytes) + ~4 KB (512 readings × 8 B) ≈ **8 KB**, fine for a typical MCU (ESP32 has 320+ KB).
-
-### Noise handling: detect, drop, resync (no repair)
-
-**Status:** Accepted
-
-**Data path:**
-
-```
-UART ISR ─► ring buffer (raw bytes, no checks) ─► parser (SOF / LEN / CRC checks) ─► valid frames
+```c
+void uart_rx_isr(void) {
+    uint8_t b = UART->DR;   // volatile register read (vendor header)
+    ringbuf_push(&rx, b);   // plain RAM: safe via atomic head/tail
+}
 ```
 
-The ring buffer only moves raw bytes from the interrupt to the main loop. The parser reads them one at a time and decides which bytes form a valid frame. That is where noise is overcome.
+### 4. Buffer sizing: large, safe buffers
 
-**Checks available in the frame format:**
+- **Sizing rule: size ≥ incoming rate × longest reader block × margin (≥2×).** The buffer must outlast the worst stall.
+- **Byte ring buffer: 4 KB.** It covers a 20 ms flash erase: ~230 B at 115200 (17× headroom), ~1,840 B at 921600 (2×).
+- **Power-of-two size.** The index wrap is a cheap bit-mask.
+- **Reading queue: 512 readings.** It covers the 320 ms `erase` command (~320 readings at 115200).
+- **On a full queue the reading is dropped and counted.** Loss is always visible in `stats`.
+- **Backlog → batch writes (up to 256 B).** This catches up faster after a stall.
+- **Buffers absorb temporary stalls, not sustained overload.** At 921600 flash needs ~2.2 s of work per 1 s of data, so loss is expected and counted.
+- **The real burst fix is cheaper flash work** (batching, small records), not bigger buffers.
+- **Static allocation only, ~8 KB of RAM.** No heap after start-up (firmware rule).
 
-| Check | Purpose |
-|---|---|
-| SOF = `0xAA` | Marks where a frame *might* start. Weak on its own, because `0xAA` also appears in noise and payloads |
-| LEN ≤ 64 | Cheap early rejection of false starts |
-| CRC-16/CCITT-FALSE | Final judge: any corruption in LEN/TYPE/PAYLOAD fails it |
-| TYPE + LEN match (`0x01`→6, `0x02`→0) | A frame with a valid CRC but the wrong shape is counted as *unknown* |
+### 5. Noise handling: detect, drop, resync (no repair)
 
-**Recovery: rescan after a false start.** Every SOF is treated as a guess. If the guess fails (bad LEN or bad CRC), only the first byte (the false `0xAA`) is dropped, and the parser rescans from the very next byte using the bytes it had buffered (max 69 = one full frame).
+- **The ring buffer carries raw bytes; the parser does all the checks.** The ISR stays tiny.
+- **SOF `0xAA` = a possible frame start.** It is only a guess, because `0xAA` also appears in noise and payloads.
+- **LEN > 64 → length error.** A cheap early rejection of false starts.
+- **CRC-16 is the final judge.** Any corruption in LEN/TYPE/PAYLOAD fails it.
+- **Valid CRC but wrong TYPE/LEN → unknown frame, counted.** The brief requires counting it.
+- **On a failure, drop only the first byte and rescan the buffered bytes.** A good frame may start inside the damaged one.
+- **No skipping the whole bad packet.** It would swallow a good frame hidden inside.
+- **Rescan buffer = 69 bytes (one max frame), static.** No heap needed.
+- **Every intact frame is found.** A byte is discarded only once it is proven not to start a valid frame.
+- **Every damaged frame is counted.** `stats` shows CRC / length / unknown / discarded counts.
+- **Damaged frames are not repaired.** A wrong stored value is worse than a missing one.
+- **Known limit: noise forming a valid CRC is accepted (~1 in 65,536).** This is inherent to CRC-16.
+- **Real-hardware extras: UART idle-line timeout, framing/parity flags.** The capture files carry no timing or error flags.
 
 ```
 37 AA 05 AA 06 01 29 09 E8 03 00 00 7B 84
-── noise ── └──────── good reading ───────┘
-
-AA 05 ...      LEN=5, CRC fails → drop first AA, rescan from "05 AA 06 ..."
-AA 06 01 ...   CRC OK → reading found ✓
+AA 05 ... CRC fails → drop first AA, rescan → AA 06 01 ... CRC OK ✓
 ```
-
-Rejected alternative: on a bad frame, skip the whole SOF+LEN packet. A good frame that starts *inside* those bytes would be lost.
-
-| Noise type | Result |
-|---|---|
-| Random junk | Discarded until the next `0xAA` |
-| Junk containing `0xAA` | False start fails its CRC; rescan finds the real frame |
-| Corrupted frame (bit errors) | CRC fails, counted as a CRC error, rescan |
-| Truncated frame | Its "frame" swallows the next frame's start, CRC fails, rescan finds the next frame |
-| LEN > 64 | Length error, immediate rescan |
-
-**What this achieves, and what it doesn't:**
-- ✅ **Every intact frame is found**, whether before, after or inside noise. A byte is only thrown away once it is proven not to start a valid frame.
-- ✅ **Every damaged frame is counted** (CRC errors, length errors, unknown frames, bytes discarded).
-- ❌ **Damaged frames are not repaired.** Their original data is lost. CRC-16 could in theory correct a single flipped bit, but that only works for one-bit errors and raises the risk of "repairing" garbage into a fake reading. For a data logger, a wrong stored value is worse than a missing one.
-
-**Known limit:** noise that happens to form a frame with a correct CRC (≈1 in 65,536 per false start) would be accepted. This is inherent to CRC-16.
-
-**On real hardware, extra sync hints exist that the simulation cannot provide:**
-- UART idle-line / RX timeout detection (gaps between frames)
-- UART framing and parity error flags
