@@ -22,8 +22,23 @@ add_library(core STATIC
     core/crc16.c
     core/reading.c
     core/parser.c
+    core/app.c
 )
 target_include_directories(core PUBLIC core include)
+
+# Simulated hardware: implements hal.h on a PC with threads and files.
+add_library(sim STATIC
+    sim/sim_time.c
+    sim/sim_uart.c
+    sim/sim_tick.c
+    sim/sim_console.c
+)
+target_include_directories(sim PUBLIC sim include)
+target_compile_definitions(sim PRIVATE _POSIX_C_SOURCE=200809L)
+target_link_libraries(sim PUBLIC Threads::Threads)
+
+add_executable(gateway sim/main.c)
+target_link_libraries(gateway PRIVATE core sim)
 
 enable_testing()
 
