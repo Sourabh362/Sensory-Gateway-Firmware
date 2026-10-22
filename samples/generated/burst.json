@@ -1,0 +1,9 @@
+{
+  "profile": "burst",
+  "seed": 3003,
+  "baud": 921600,
+  "bytes": 222370,
+  "intact_readings": 19784,
+  "intact_heartbeats": 197,
+  "generator": "tools/make_capture.py"
+}

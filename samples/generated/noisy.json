@@ -1,0 +1,9 @@
+{
+  "profile": "noisy",
+  "seed": 2002,
+  "baud": 115200,
+  "bytes": 36718,
+  "intact_readings": 2714,
+  "intact_heartbeats": 108,
+  "generator": "tools/make_capture.py"
+}

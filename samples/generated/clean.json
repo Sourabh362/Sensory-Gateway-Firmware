@@ -1,0 +1,9 @@
+{
+  "profile": "clean",
+  "seed": 1001,
+  "baud": 115200,
+  "bytes": 22400,
+  "intact_readings": 2000,
+  "intact_heartbeats": 80,
+  "generator": "tools/make_capture.py"
+}

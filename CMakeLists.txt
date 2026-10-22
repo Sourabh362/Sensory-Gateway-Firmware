@@ -59,3 +59,16 @@ add_unit_test(test_spsc_ring LIBS core Threads::Threads)
 add_unit_test(test_parser LIBS core)
 add_unit_test(test_flash_sim LIBS sim)
 add_unit_test(test_flashlog LIBS core sim)
+
+# End-to-end: replay each capture through the gateway, compare stats with its manifest.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    foreach(profile clean noisy burst)
+        set(cap ${CMAKE_SOURCE_DIR}/samples/generated/${profile})
+        if(EXISTS ${cap}.bin)
+            add_test(NAME e2e_${profile}
+                     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_test.py
+                             $<TARGET_FILE:gateway> ${cap}.bin ${cap}.json)
+        endif()
+    endforeach()
+endif()
