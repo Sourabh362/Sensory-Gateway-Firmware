@@ -1,0 +1,18 @@
+{
+  "profile": "clean",
+  "seed": 1001,
+  "bytes": 22400,
+  "suggested_baud": 115200,
+  "intact_frames": 2080,
+  "intact_readings": 2000,
+  "intact_heartbeats": 80,
+  "injected": {
+    "corrupted": 0,
+    "truncated": 0,
+    "bad_length": 0,
+    "garbage_runs": 0,
+    "garbage_bytes": 0
+  },
+  "temp_centi_min": 1580,
+  "temp_centi_max": 3100
+}

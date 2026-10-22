@@ -1,0 +1,18 @@
+{
+  "profile": "burst",
+  "seed": 3003,
+  "bytes": 223294,
+  "suggested_baud": 921600,
+  "intact_frames": 19982,
+  "intact_readings": 19784,
+  "intact_heartbeats": 198,
+  "injected": {
+    "corrupted": 218,
+    "truncated": 0,
+    "bad_length": 0,
+    "garbage_runs": 186,
+    "garbage_bytes": 2294
+  },
+  "temp_centi_min": 1751,
+  "temp_centi_max": 3838
+}

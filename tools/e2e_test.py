@@ -14,7 +14,7 @@ def main():
     gateway, capture, manifest_path = sys.argv[1:4]
     with open(manifest_path) as f:
         m = json.load(f)
-    baud = m.get("baud", 115200)
+    baud = m.get("suggested_baud", m.get("baud", 115200))
 
     with tempfile.TemporaryDirectory() as tmp:
         flash = os.path.join(tmp, "flash.img")

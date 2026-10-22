@@ -64,11 +64,14 @@ add_unit_test(test_flashlog LIBS core sim)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
     foreach(profile clean noisy burst)
-        set(cap ${CMAKE_SOURCE_DIR}/samples/generated/${profile})
-        if(EXISTS ${cap}.bin)
-            add_test(NAME e2e_${profile}
-                     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_test.py
-                             $<TARGET_FILE:gateway> ${cap}.bin ${cap}.json)
-        endif()
+        foreach(dir samples samples/generated)
+            set(cap ${CMAKE_SOURCE_DIR}/${dir}/${profile})
+            if(EXISTS ${cap}.bin)
+                string(REPLACE "/" "_" tag ${dir})
+                add_test(NAME e2e_${tag}_${profile}
+                         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/e2e_test.py
+                                 $<TARGET_FILE:gateway> ${cap}.bin ${cap}.json)
+            endif()
+        endforeach()
     endforeach()
 endif()

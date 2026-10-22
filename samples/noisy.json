@@ -1,0 +1,18 @@
+{
+  "profile": "noisy",
+  "seed": 2002,
+  "bytes": 36695,
+  "suggested_baud": 115200,
+  "intact_frames": 2824,
+  "intact_readings": 2714,
+  "intact_heartbeats": 110,
+  "injected": {
+    "corrupted": 173,
+    "truncated": 123,
+    "bad_length": 62,
+    "garbage_runs": 275,
+    "garbage_bytes": 3342
+  },
+  "temp_centi_min": 662,
+  "temp_centi_max": 2785
+}
