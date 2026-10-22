@@ -22,6 +22,11 @@ static inline void counter_inc(counter_t *c)
     counter_add(c, 1u);
 }
 
+static inline void counter_set(counter_t *c, uint32_t v)
+{
+    atomic_store_explicit(c, v, memory_order_relaxed);
+}
+
 static inline uint32_t counter_get(counter_t *c)
 {
     return atomic_load_explicit(c, memory_order_relaxed);

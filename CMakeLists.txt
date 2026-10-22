@@ -22,6 +22,7 @@ add_library(core STATIC
     core/crc16.c
     core/reading.c
     core/parser.c
+    core/flashlog.c
     core/app.c
 )
 target_include_directories(core PUBLIC core include)
@@ -32,6 +33,7 @@ add_library(sim STATIC
     sim/sim_uart.c
     sim/sim_tick.c
     sim/sim_console.c
+    sim/sim_flash.c
 )
 target_include_directories(sim PUBLIC sim include)
 target_compile_definitions(sim PRIVATE _POSIX_C_SOURCE=200809L)
@@ -55,3 +57,5 @@ endfunction()
 add_unit_test(test_smoke)
 add_unit_test(test_spsc_ring LIBS core Threads::Threads)
 add_unit_test(test_parser LIBS core)
+add_unit_test(test_flash_sim LIBS sim)
+add_unit_test(test_flashlog LIBS core sim)
