@@ -14,6 +14,14 @@ add_compile_options(
 
 include_directories(include)
 
+find_package(Threads REQUIRED)
+
+# Firmware core: portable, no OS calls, no heap.
+add_library(core STATIC
+    core/spsc_ring.c
+)
+target_include_directories(core PUBLIC core include)
+
 enable_testing()
 
 # add_unit_test(<name> <sources...> [LIBS <libs...>])
@@ -27,3 +35,4 @@ function(add_unit_test name)
 endfunction()
 
 add_unit_test(test_smoke)
+add_unit_test(test_spsc_ring LIBS core Threads::Threads)

@@ -1,8 +1,4 @@
-/*
- * test_assert.h - minimal test helpers, no framework needed.
- * A failed check prints file:line and exits with status 1, which CTest
- * reports as a failure.
- */
+/* Minimal test helpers: a failed check prints file:line and exits 1. */
 #ifndef TEST_ASSERT_H
 #define TEST_ASSERT_H
 
