@@ -19,6 +19,9 @@ find_package(Threads REQUIRED)
 # Firmware core: portable, no OS calls, no heap.
 add_library(core STATIC
     core/spsc_ring.c
+    core/crc16.c
+    core/reading.c
+    core/parser.c
 )
 target_include_directories(core PUBLIC core include)
 
@@ -36,3 +39,4 @@ endfunction()
 
 add_unit_test(test_smoke)
 add_unit_test(test_spsc_ring LIBS core Threads::Threads)
+add_unit_test(test_parser LIBS core)
