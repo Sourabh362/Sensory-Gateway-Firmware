@@ -9,8 +9,10 @@
 #include "parser.h"
 #include "spsc_ring.h"
 
-#define RX_RING_SIZE 4096u  /* power of 2; holds > 20 ms at 921600 baud */
-#define READING_Q_SIZE 512u /* power of 2; covers the 320 ms erase-all */
+// #define RX_RING_SIZE 4096u  /* power of 2; holds > 20 ms at 921600 baud */
+#define RX_RING_SIZE 16u  /* power of 2; holds > 20 ms at 921600 baud */
+// #define READING_Q_SIZE 512u /* power of 2; covers the 320 ms erase-all */
+#define READING_Q_SIZE  16u /* power of 2; covers the 320 ms erase-all */
 #define CMD_Q_SIZE 4u
 #define PARSE_BUDGET 256u /* max bytes parsed per step */
 #define WRITE_BATCH 32u   /* max readings per flash write (one page) */
