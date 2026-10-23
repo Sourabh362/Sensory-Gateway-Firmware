@@ -5,7 +5,8 @@ stream, stores readings in NOR flash without losing them on power cuts, and offe
 The hardware (UART, 1 ms tick, NOR flash, console) is simulated on a PC; the firmware core is
 portable C with no OS calls and no heap.
 
-- **Design decisions, trade-offs and explanations:** [docs/decisions.md](docs/decisions.md)
+- **How it works, how to test it, trade-offs at a glance:** [docs/explanation.md](docs/explanation.md)
+- **Every design decision with full reasoning:** [docs/decisions.md](docs/decisions.md)
 
 ## Layout
 

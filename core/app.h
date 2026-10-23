@@ -5,8 +5,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Returns false if the flash log cannot start (bad geometry or flash fault). */
-bool app_init(void);
+/* Returns false if the flash log cannot start (bad geometry or flash fault).
+ * interactive: show a "> " prompt and wait for commands. */
+bool app_init(bool interactive);
 
 /* Stages: each does a bounded amount of work and returns true if it did any.
  * Single core: call all three in a loop. Multi-core: any split works, as long

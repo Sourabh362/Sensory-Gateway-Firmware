@@ -71,7 +71,7 @@ int main(int argc, char **argv)
     if (!exit_when_done) {
         sim_console_start();
     }
-    if (!app_init()) {
+    if (!app_init(!exit_when_done)) {
         fprintf(stderr, "flash log failed to start\n");
         return 1;
     }

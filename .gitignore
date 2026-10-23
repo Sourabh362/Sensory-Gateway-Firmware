@@ -1,4 +1,5 @@
 build/
 .cache/
+/explanation.md
 *.img
 .DS_Store
