@@ -24,6 +24,7 @@ typedef struct {
     counter_t heartbeats;
     counter_t crc_errors;
     counter_t len_errors;
+    counter_t temp_out_of_range;
     counter_t unknown_frames;  /* valid CRC, unknown TYPE or wrong LEN for TYPE */
     counter_t bytes_discarded; /* bytes skipped looking for SOF + dropped false SOFs */
 } parser_stats_t;

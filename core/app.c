@@ -9,10 +9,10 @@
 #include "parser.h"
 #include "spsc_ring.h"
 
-// #define RX_RING_SIZE 4096u  /* power of 2; holds > 20 ms at 921600 baud */
-#define RX_RING_SIZE 16u  /* power of 2; holds > 20 ms at 921600 baud */
-// #define READING_Q_SIZE 512u /* power of 2; covers the 320 ms erase-all */
-#define READING_Q_SIZE  16u /* power of 2; covers the 320 ms erase-all */
+#define RX_RING_SIZE 4096u  /* power of 2; holds > 20 ms at 921600 baud */
+// #define RX_RING_SIZE 16u /* power of 2; holds > 20 ms at 921600 baud */
+#define READING_Q_SIZE 512u /* power of 2; covers the 320 ms erase-all */
+// #define READING_Q_SIZE 16u /* power of 2; covers the 320 ms erase-all */
 #define CMD_Q_SIZE 4u
 #define PARSE_BUDGET 256u /* max bytes parsed per step */
 #define WRITE_BATCH 32u   /* max readings per flash write (one page) */
@@ -232,6 +232,7 @@ void app_print_stats(void)
     print_counter("bytes_lost", counter_get(&bytes_lost));
     hal_console_write("-- parser\n");
     print_counter("readings", counter_get(&parser.stats.readings));
+    print_counter("Dropped readings(temp out of range)", counter_get(&parser.stats.temp_out_of_range));
     print_counter("heartbeats", counter_get(&parser.stats.heartbeats));
     print_counter("crc_errors", counter_get(&parser.stats.crc_errors));
     print_counter("len_errors", counter_get(&parser.stats.len_errors));
@@ -304,7 +305,7 @@ bool app_console_step(void)
     {
         app_print_stats();
     }
-    else if (line[0] != '\0')
+    else if ((line[0] != '\0') || (strcmp(line, "stats") == 0))
     {
         hal_console_write("commands: stats | dump <n> | erase\n");
     }
@@ -359,9 +360,9 @@ bool app_init(bool is_interactive)
 
 bool app_poll(void)
 {
-    bool busy = app_parse_step();
-    busy |= app_save_step();
-    busy |= app_console_step();
+    bool busy = app_parse_step(); // uart bytes decoding
+    busy |= app_save_step();      // readings to flash
+    busy |= app_console_step();   // for prompt check
     return busy;
 }
 
