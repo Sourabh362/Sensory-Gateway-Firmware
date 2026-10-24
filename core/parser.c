@@ -36,12 +36,7 @@ static step_result_t finish_frame(parser_t *p)
 
         reading_t r;
         memcpy(r.raw, &p->frame[FRAME_HEADER_SIZE], READING_SIZE); /* payload + crc */
-        int16_t t = reading_temp_centi(&r);
-        if (t < -4000 || t > 8500)
-        {
-            counter_inc(&p->stats.temp_out_of_range);
-            return STEP_DONE;
-        }
+        counter_inc(&p->stats.readings);
         if (p->on_reading != NULL)
         {
             p->on_reading(&r, p->ctx);
@@ -49,7 +44,8 @@ static step_result_t finish_frame(parser_t *p)
         return STEP_DONE;
     }
 
-    else if(type == FRAME_TYPE_HUMIDITY && len == FRAME_READING_LEN){
+    else if (type == FRAME_TYPE_HUMIDITY && len == FRAME_READING_LEN)
+    {
         reading_t r;
         memcpy(r.raw, &p->frame[FRAME_HEADER_SIZE], READING_SIZE); /* payload + crc */
 
@@ -57,7 +53,7 @@ static step_result_t finish_frame(parser_t *p)
         {
             p->on_reading(&r, p->ctx);
         }
-         counter_inc(&p->stats.humidity);
+        counter_inc(&p->stats.humidity);
         return STEP_DONE;
     }
 
