@@ -48,6 +48,19 @@ static step_result_t finish_frame(parser_t *p)
         }
         return STEP_DONE;
     }
+
+    else if(type == FRAME_TYPE_HUMIDITY && len == FRAME_READING_LEN){
+        reading_t r;
+        memcpy(r.raw, &p->frame[FRAME_HEADER_SIZE], READING_SIZE); /* payload + crc */
+
+        if (p->on_reading != NULL)
+        {
+            p->on_reading(&r, p->ctx);
+        }
+         counter_inc(&p->stats.humidity);
+        return STEP_DONE;
+    }
+
     else if (type == FRAME_TYPE_HEARTBEAT && len == 0u)
     {
         counter_inc(&p->stats.heartbeats);

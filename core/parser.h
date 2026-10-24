@@ -15,6 +15,7 @@
 #define FRAME_MAX_PAYLOAD    64u
 #define FRAME_TYPE_READING   0x01u
 #define FRAME_TYPE_HEARTBEAT 0x02u
+#define FRAME_TYPE_HUMIDITY  0x03u
 #define FRAME_READING_LEN    6u
 #define FRAME_HEADER_SIZE    3u /* SOF, LEN, TYPE */
 #define FRAME_MAX_SIZE       (FRAME_HEADER_SIZE + FRAME_MAX_PAYLOAD + 2u)
@@ -22,6 +23,7 @@
 typedef struct {
     counter_t readings;
     counter_t heartbeats;
+    counter_t humidity;
     counter_t crc_errors;
     counter_t len_errors;
     counter_t temp_out_of_range;

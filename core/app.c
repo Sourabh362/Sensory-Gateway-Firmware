@@ -232,6 +232,7 @@ void app_print_stats(void)
     print_counter("bytes_lost", counter_get(&bytes_lost));
     hal_console_write("-- parser\n");
     print_counter("readings", counter_get(&parser.stats.readings));
+    print_counter("humidity", counter_get(&parser.stats.humidity));
     print_counter("Dropped readings(temp out of range)", counter_get(&parser.stats.temp_out_of_range));
     print_counter("heartbeats", counter_get(&parser.stats.heartbeats));
     print_counter("crc_errors", counter_get(&parser.stats.crc_errors));
